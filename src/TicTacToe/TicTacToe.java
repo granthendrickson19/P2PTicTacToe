@@ -13,6 +13,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Scanner;
 
+//https://youtu.be/aIaFFPatJjY?t=1188
 public class TicTacToe implements Runnable{
 
     private String ip = "localhost";
