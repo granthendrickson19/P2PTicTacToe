@@ -9,11 +9,12 @@ import java.awt.image.BufferedImage;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Scanner;
 
-//https://youtu.be/aIaFFPatJjY?t=1188
+//https://youtu.be/aIaFFPatJjY?t=3672
 public class TicTacToe implements Runnable{
 
     private String ip = "localhost";
@@ -45,6 +46,7 @@ public class TicTacToe implements Runnable{
     private boolean unableToCommunicateWithOpponent = false;
     private boolean won = false;
     private boolean enemyWon= false;
+    private boolean tie = false;
 
     private int lengthOfSpace= 160;
     private int errors = 0;
@@ -59,6 +61,13 @@ public class TicTacToe implements Runnable{
     private String unableToCommunicateWithOpponentString = "Unable to communicate with opponent";
     private String wonString = "You Won!";
     private String enemyWonString = "Opponent Won";
+    private String tieString = "Game ended in a tie";
+
+    private int [][] wins = new int[][]{
+            {0,1,2},{3,4,5},{6,7,8},
+            {0,3,6},{1,4,7},{2,5,8},
+            {0,4,8},{2,4,6}
+    };
 
 
     public TicTacToe() {
@@ -95,25 +104,62 @@ public class TicTacToe implements Runnable{
 
     @Override
     public void run() {
+        while(true){
+            tick();
+            painter.repaint();
 
+            if(!circle && !accepted){
+                listenForServerRequest();
+            }
+        }
     }
-    public class Painter extends JPanel implements MouseListener {
+    private class Painter extends JPanel implements MouseListener {
+        private static final long serialVersionUID = 1L;
 
-        public Painter(){
+        public Painter() {
             setFocusable(true);
             requestFocus();
             setBackground(Color.WHITE);
             addMouseListener(this);
         }
 
-        public void painterComponent(Graphics g){
+        @Override
+        public void paintComponent(Graphics g) {
             super.paintComponent(g);
             render(g);
         }
 
         @Override
         public void mouseClicked(MouseEvent e) {
+            if (accepted) {
+                if (yourTurn && !unableToCommunicateWithOpponent && !won && !enemyWon) {
+                    int x = e.getX() / lengthOfSpace;
+                    int y = e.getY() / lengthOfSpace;
+                    y *= 3;
+                    int position = x + y;
 
+                    if (spaces[position] == null) {
+                        if (!circle) spaces[position] = "X";
+                        else spaces[position] = "O";
+                        yourTurn = false;
+                        repaint();
+                        Toolkit.getDefaultToolkit().sync();
+
+                        try {
+                            dos.writeInt(position);
+                            dos.flush();
+                        } catch (IOException e1) {
+                            errors++;
+                            e1.printStackTrace();
+                        }
+
+                        System.out.println("DATA WAS SENT");
+                        checkForWin();
+                        checkForTie();
+
+                    }
+                }
+            }
         }
 
         @Override
@@ -138,21 +184,172 @@ public class TicTacToe implements Runnable{
     }
 
     private void render(Graphics g) {
+        g.drawImage(board,0,0,null);
+        if(unableToCommunicateWithOpponent){
+            g.setColor(Color.RED);
+            g.setFont(smallerFont);
+            Graphics2D g2 = (Graphics2D) g;
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            int stringWidth = g2.getFontMetrics().stringWidth(unableToCommunicateWithOpponentString);
+            g.drawString(unableToCommunicateWithOpponentString, WIDTH / 2 - stringWidth / 2, HEIGHT / 2 );
+            return;
+        }
+        if(accepted){
+            for (int i = 0; i < spaces.length; i++) {
+                if (spaces[i] != null) {
+                    if (spaces[i].equals("X")) {
+                        if (circle) {
+                            g.drawImage(redX, (i % 3) * lengthOfSpace + 10 * (i % 3), (int) (i / 3) * lengthOfSpace + 10 * (int) (i / 3), null);
+                        } else {
+                            g.drawImage(blueX, (i % 3) * lengthOfSpace + 10 * (i % 3), (int) (i / 3) * lengthOfSpace + 10 * (int) (i / 3), null);
+                        }
+                    } else if (spaces[i].equals("O")) {
+                        if (circle) {
+                            g.drawImage(blueCircle, (i % 3) * lengthOfSpace + 10 * (i % 3), (int) (i / 3) * lengthOfSpace + 10 * (int) (i / 3), null);
+                        } else {
+                            g.drawImage(redCircle, (i % 3) * lengthOfSpace + 10 * (i % 3), (int) (i / 3) * lengthOfSpace + 10 * (int) (i / 3), null);
+                        }
+                    }
+                }
+            }
+            if(won || enemyWon){
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setStroke(new BasicStroke(10));
+                g.setColor(Color.BLACK);
+                g.drawLine(firstSpot % 3 * lengthOfSpace + 10 * firstSpot % 3 + lengthOfSpace / 2, (int) (firstSpot / 3) * lengthOfSpace + 10 * (int) (firstSpot / 3) + lengthOfSpace / 2, secondSpot % 3 * lengthOfSpace + 10 * secondSpot % 3 + lengthOfSpace / 2, (int) (secondSpot / 3) * lengthOfSpace + 10 * (int) (secondSpot / 3) + lengthOfSpace / 2);
+                g.setColor(Color.RED);
+                g.setFont(LargerFont);
+                if(won){
+                    int stringWidth = g2.getFontMetrics().stringWidth(wonString);
+                    g.drawString(wonString, WIDTH/2 - stringWidth/2, HEIGHT/2);
+                }
+                else if (enemyWon){
+                    int stringWidth = g2.getFontMetrics().stringWidth(enemyWonString);
+                    g.drawString(enemyWonString,WIDTH/2 - stringWidth/2, HEIGHT/2);
+                }
+            }
+            if(tie){
+                Graphics2D g2 = (Graphics2D) g;
+                g.setColor(Color.BLACK);
+                g.setFont(LargerFont);
+                int stringWidth =  g2.getFontMetrics().stringWidth(tieString);
+                g.drawString(tieString, WIDTH /2 - stringWidth / 2 , HEIGHT /2 );
+            }
+        }else {
+            g.setColor(Color.RED);
+            g.setFont(font);
+            Graphics2D g2 = (Graphics2D) g;
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            int stringWidth = g2.getFontMetrics().stringWidth(waitingString);
+            g.drawString(waitingString,WIDTH / 2 - stringWidth / 2, HEIGHT /2);
+        }
     }
 
     private void tick() {
-
+        if(errors >= 1){
+            unableToCommunicateWithOpponent = true;
+        }
+        if(!yourTurn && !unableToCommunicateWithOpponent){
+            try{
+                int space = dis.readInt();
+                if(circle){
+                    spaces[space] = "X";
+                }
+                else{
+                    spaces[space] = "O";
+                }
+                checkForEnemyWin();
+                checkForTie();
+                yourTurn = true;
+            }catch(IOException e){
+                e.printStackTrace();
+                errors++;
+            }
+        }
     }
 
-    private void checkForWin(){
+    private void listenForServerRequest(){
+        Socket socket = null;
+        try{
+            socket = serverSocket.accept();
+            dos = new DataOutputStream(socket.getOutputStream());
+            dis = new DataInputStream(socket.getInputStream());
+            accepted = true;
+            System.out.println("CLIENT HAS REQUESTED TO JOIN AND WE HAVE ACCECPTED");
 
+        }catch(IOException e){
+            e.printStackTrace();
+        }
     }
 
-    private void checkForEnemyWin(){
-
+    private boolean connect(){
+        try{
+            socket = new Socket(ip, port);
+            dos = new DataOutputStream(socket.getOutputStream());
+            dis = new DataInputStream(socket.getInputStream());
+            accepted = true;
+        }catch(IOException e) {
+            System.out.println("Unable to connect to the addres: " + ip + ":" + port + " Starting a server");
+            return false;
+        }
+        System.out.println("Connected to server");
+        return true;
     }
+
+    private void initializeServer(){
+        try {
+            serverSocket = new ServerSocket(port, 8, InetAddress.getByName(ip));
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        yourTurn = false;
+        circle = true;
+    }
+
+    private void checkForWin() {
+        for (int i = 0; i < wins.length; i++) {
+                if (circle) {
+                    if (spaces[wins[i][0]]== "O" && spaces[wins[i][1]]=="O" && spaces[wins[i][2]]=="O") {
+                        firstSpot = wins[i][0];
+                        secondSpot = wins[i][2];
+                        won = true;
+                    }
+                } else {
+                    if (spaces[wins[i][0]]=="X" && spaces[wins[i][1]]=="X" && spaces[wins[i][2]]=="X") {
+                        firstSpot = wins[i][0];
+                        secondSpot = wins[i][2];
+                        won = true;
+                    }
+                }
+            }
+        }
+
+    private void checkForEnemyWin() {
+        for (int i = 0; i < wins.length; i++) {
+                if (circle) {
+                    if (spaces[wins[i][0]]=="X" && spaces[wins[i][1]]=="X" && spaces[wins[i][2]]=="X") {
+                        firstSpot = wins[i][0];
+                        secondSpot = wins[i][2];
+                        enemyWon = true;
+                    }
+                } else {
+                    if (spaces[wins[i][0]]=="O" && spaces[wins[i][1]]=="O" && spaces[wins[i][2]]=="O") {
+                        firstSpot = wins[i][0];
+                        secondSpot = wins[i][2];
+                        enemyWon = true;
+                    }
+                }
+            }
+        }
 
     private void checkForTie(){
-
+        for (int i = 0; i < spaces.length; i++) {
+            if(spaces[i]==null){
+                return;
+            }
+            else{
+                tie = true;
+            }
+        }
     }
 }
